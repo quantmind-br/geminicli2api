@@ -1,24 +1,106 @@
-version: '3.8'
-
 services:
   geminicli2api:
-    build: .
-    ports:
-      - "${PORT:-8888}:${PORT:-8888}"
+    # Use the pre-built image from Docker Hub
+    image: drnit29/geminicli2api:latest
+    
+    # Coolify labels for automatic configuration
+    labels:
+      # Traefik configuration for reverse proxy
+      - "traefik.enable=true"
+      - "traefik.http.routers.geminicli2api.rule=Host(`${FQDN}`)"
+      - "traefik.http.routers.geminicli2api.entrypoints=websecure"
+      - "traefik.http.routers.geminicli2api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.geminicli2api.loadbalancer.server.port=8888"
+      
+      # Coolify specific labels
+      - "coolify.managed=true"
+      - "coolify.name=geminicli2api"
+      - "coolify.type=application"
+      
     environment:
-      - GEMINI_AUTH_PASSWORD=${GEMINI_AUTH_PASSWORD:-your_password_here}
+      # Required: Authentication password (set via Coolify GUI)
+      - GEMINI_AUTH_PASSWORD=${GEMINI_AUTH_PASSWORD}
+      
+      # Google Cloud Credentials (set via Coolify GUI)
       - GEMINI_CREDENTIALS=${GEMINI_CREDENTIALS:-}
       - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
-      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
-      - HOST=${HOST:-0.0.0.0}
-      - PORT=${PORT:-8888}
-    volumes:
-      # Optional: Mount credentials file if using file-based auth
-      - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/app/${GOOGLE_APPLICATION_CREDENTIALS:-oauth_creds.json}:ro
-    restart: unless-stopped
+      
+      # Server configuration
+      - HOST=0.0.0.0
+      - PORT=8888
+      - PYTHONPATH=/app
+      
+      # Production optimizations
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - WORKERS=${WORKERS:-1}
+      
+    # Health check for Coolify monitoring
     healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://localhost:${PORT:-8888}/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
+    
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      
+      # Rolling update strategy
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+      
+      # Restart policy
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    
+    # Coolify storage configuration
+    volumes:
+      # Persistent storage for logs (managed by Coolify)
+      - geminicli2api-logs:/app/logs
+      
+      # Credentials file if using file-based auth
+      - type: bind
+        source: /data/coolify/storage/geminicli2api/oauth_creds.json
+        target: /app/oauth_creds.json
+        read_only: true
+        bind:
+          create_host_path: false
+    
+    # Security configuration
+    security_opt:
+      - no-new-privileges:true
+    
+    # User configuration (non-root)
+    user: "1000:1000"
+    
+    # Network configuration (managed by Coolify)
+    networks:
+      - coolify
+
+# Coolify managed network
+networks:
+  coolify:
+    external: true
+    name: coolify
+
+# Coolify managed volumes
+volumes:
+  geminicli2api-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/coolify/storage/geminicli2api/logs

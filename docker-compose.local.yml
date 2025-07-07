@@ -1,0 +1,59 @@
+services:
+  geminicli2api:
+    image: drnit29/geminicli2api:latest
+    container_name: geminicli2api-local
+    ports:
+      - "${PORT:-8888}:${PORT:-8888}"
+    environment:
+      # Required: Authentication password
+      - GEMINI_AUTH_PASSWORD=${GEMINI_AUTH_PASSWORD:-change_me_please}
+      
+      # Google Cloud Credentials (choose one method)
+      - GEMINI_CREDENTIALS=${GEMINI_CREDENTIALS:-}
+      - GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS:-}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      
+      # Server configuration
+      - HOST=${HOST:-0.0.0.0}
+      - PORT=${PORT:-8888}
+      - PYTHONPATH=/app
+      
+      # Optional: Logging configuration
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+    volumes:
+      # Mount credentials file if using file-based auth
+      - type: bind
+        source: ${GOOGLE_APPLICATION_CREDENTIALS:-./oauth_creds.json}
+        target: /app/oauth_creds.json
+        read_only: true
+        bind:
+          create_host_path: false
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8888}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits for local development
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    # Networks
+    networks:
+      - geminicli2api-network
+
+networks:
+  geminicli2api-network:
+    driver: bridge
+    name: geminicli2api-local-network
